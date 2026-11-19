@@ -1,0 +1,13 @@
+{
+  "name": "TailyPaw+",
+  "short_name": "TailyPaw+",
+  "description": "Reencontro de pets perdidos na sua cidade.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#0F7F8C",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "/logo_app.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ]
+}
