@@ -5,7 +5,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
 
 function openPrint(title: string, body: string) {
   const w = window.open("", "_blank");
-  if (!w) { alert("Permita pop-ups para imprimir."); return; }
+  if (!w) { window.dispatchEvent(new CustomEvent("tp:toast", { detail: { msg: "Permita pop-ups para imprimir.", kind: "error" } })); return; }
   w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(title)}</title>
 <style>@page{size:A4;margin:12mm}body{font-family:"Segoe UI",Arial,sans-serif;color:#0B2A30;margin:0}
 .c{display:flex;flex-direction:column;align-items:center;text-align:center}img{display:block}</style></head><body>${body}

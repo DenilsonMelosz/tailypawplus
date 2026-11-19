@@ -2,16 +2,21 @@ import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 
+/** Pilha de janelas abertas: o Esc fecha so a que esta na frente. */
+const stack: symbol[] = [];
+
 export function Modal({ open, onClose, title, children, side = false }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode; side?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const me = Symbol("modal");
+    stack.push(me);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && stack[stack.length - 1] === me && onClose();
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+    return () => { document.removeEventListener("keydown", onKey); const i = stack.indexOf(me); if (i >= 0) stack.splice(i, 1); document.body.style.overflow = prev; };
   }, [open, onClose]);
   if (!open) return null;
   return createPortal(

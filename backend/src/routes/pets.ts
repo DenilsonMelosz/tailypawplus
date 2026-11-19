@@ -36,6 +36,13 @@ const petDto = (p: any) => ({
 
 export const pets = Router();
 
+/** Apaga a foto do pet quando nenhum alerta a usa mais (minimizacao de dados, LGPD). */
+async function dropImageIfUnused(imageId: string | null | undefined) {
+  if (!imageId) return;
+  await q(`DELETE FROM images WHERE id=$1 AND NOT EXISTS (SELECT 1 FROM alerts WHERE image_ids LIKE '%' || $1 || '%')
+    AND NOT EXISTS (SELECT 1 FROM pets WHERE photo_id=$1)`, [imageId]);
+}
+
 pets.get("/", requireAuth, wrap(async (req, res) => {
   const rows = await q(`SELECT p.*, (SELECT id FROM alerts a WHERE a.pet_id = p.id AND a.status='aberto' LIMIT 1) AS open_alert
     FROM pets p WHERE owner_id=$1 ORDER BY created_at`, [req.userId]);
@@ -60,6 +67,44 @@ pets.post("/", requireAuth, wrap(async (req, res) => {
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
     [id, req.userId, b.name, b.species, b.breed, b.color ?? null, b.size ?? null, b.sex ?? null, b.photoId ?? null, code]);
   res.status(201).json(petDto(p));
+}));
+
+/* RF14: o tutor edita nome, foto e demais dados do pet. A plaquinha (codigo) nao muda. */
+pets.patch("/:id", requireAuth, wrap(async (req, res) => {
+  const b = z.object({
+    name: z.string().trim().min(1, "Informe o nome do pet.").max(60).optional(),
+    species: z.enum(["cao", "gato", "outro"]).optional(),
+    breed: z.string().trim().min(1, "Informe a raça ou se é SRD.").max(60).optional(),
+    color: z.string().trim().max(60).nullish(),
+    size: z.enum(["pequeno", "medio", "grande"]).nullish(),
+    sex: z.enum(["macho", "femea", "nao_sei"]).nullish(),
+    photoId: z.string().uuid().nullish(),
+  }).parse(req.body);
+  const cur = await one(`SELECT * FROM pets WHERE id=$1 AND owner_id=$2`, [req.params.id, req.userId]);
+  if (!cur) throw new HttpError(404, "Pet não encontrado.");
+  if (b.photoId && b.photoId !== cur.photo_id && !(await one(`SELECT 1 FROM images WHERE id=$1 AND owner_id=$2`, [b.photoId, req.userId]))) throw new HttpError(400, "Foto inválida.");
+  const has = (k: keyof typeof b) => b[k] !== undefined;
+  const next = {
+    name: b.name ?? cur.name, species: b.species ?? cur.species, breed: b.breed ?? cur.breed,
+    color: has("color") ? b.color || null : cur.color, size: has("size") ? b.size ?? null : cur.size,
+    sex: has("sex") ? b.sex ?? null : cur.sex, photo_id: has("photoId") ? b.photoId ?? null : cur.photo_id,
+  };
+  const p = await one(`UPDATE pets SET name=$2, species=$3, breed=$4, color=$5, size=$6, sex=$7, photo_id=$8 WHERE id=$1 RETURNING *`,
+    [cur.id, next.name, next.species, next.breed, next.color, next.size, next.sex, next.photo_id]);
+  // alerta ativo do pet continua coerente com o cadastro
+  await q(`UPDATE alerts SET animal_name=$2, species=$3, breed=$4, color=$5, size=$6, sex=$7 WHERE pet_id=$1 AND status='aberto'`,
+    [cur.id, next.name, next.species, next.breed, next.color, next.size, next.sex]);
+  if (cur.photo_id && cur.photo_id !== next.photo_id) await dropImageIfUnused(cur.photo_id);
+  res.json(petDto(p));
+}));
+
+/* RF15: o tutor apaga o pet. A plaquinha deixa de abrir e as leituras sao apagadas; alertas antigos ficam sem o vinculo. */
+pets.delete("/:id", requireAuth, wrap(async (req, res) => {
+  const cur = await one(`SELECT * FROM pets WHERE id=$1 AND owner_id=$2`, [req.params.id, req.userId]);
+  if (!cur) throw new HttpError(404, "Pet não encontrado.");
+  await q(`DELETE FROM pets WHERE id=$1`, [cur.id]);
+  await dropImageIfUnused(cur.photo_id);
+  res.json({ ok: true });
 }));
 
 /* Leituras da plaquinha: so o tutor ve (RF07). */

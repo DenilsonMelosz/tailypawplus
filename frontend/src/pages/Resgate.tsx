@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bell, Heart, MapPinned, PawPrint, Plus, QrCode, SearchX, Siren } from "lucide-react";
+import { MapPinned, PawPrint, Plus, SearchX } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useUi } from "../lib/ui";
@@ -12,54 +12,8 @@ import { COLORS, MapView } from "../components/MapView";
 
 type Filter = "perdido" | "avistado" | "todos";
 
-/** T1 Resgate. Sem conta: apresentacao e entrada. Com conta: mapa e lista dos casos ativos da cidade (RF04). */
+/** T1 Resgate: mapa e lista dos casos ativos da cidade (RF04). Rota privada. */
 export default function Resgate() {
-  const { user, ready } = useAuth();
-  if (!ready) return <div className="card h-96 animate-pulse bg-stone-100" />;
-  return user ? <Cidade /> : <Entrada />;
-}
-
-function Entrada() {
-  const { requireLogin } = useAuth();
-  const steps = [
-    { Icon: Siren, t: "Publique o alerta", d: "Conte o que aconteceu, com fotos e o local. Leva poucos minutos." },
-    { Icon: Bell, t: "A cidade é avisada", d: "Quem mora na mesma cidade e aceitou receber alertas é notificado na hora." },
-    { Icon: Heart, t: "Combinem a devolução", d: "Conversem pelo aplicativo, sem expor telefone nem endereço." },
-  ];
-  return (
-    <div className="max-w-3xl mx-auto py-6 sm:py-12">
-      <div className="text-center">
-        <span className="chip bg-brand-100 text-brand-700">Reencontro de pets perdidos</span>
-        <h1 className="text-3xl sm:text-5xl font-extrabold mt-3 leading-tight">Todo pet perdido tem uma cidade inteira para ajudar.</h1>
-        <p className="text-lg text-stone-600 mt-3 max-w-xl mx-auto">Entre para ver os casos ativos da sua cidade no mapa, publicar um alerta e falar com quem viu o seu pet.</p>
-        <div className="flex flex-col sm:flex-row gap-3 justify-center mt-6">
-          <button type="button" className="btn-primary h-12 px-8 text-base" onClick={() => requireLogin("Entre para ver os casos da sua cidade.", "login")}>Entrar</button>
-          <button type="button" className="btn-accent h-12 px-8 text-base" onClick={() => requireLogin("Crie sua conta para ver e publicar alertas.", "register")}>Criar conta</button>
-        </div>
-      </div>
-
-      <ol className="grid sm:grid-cols-3 gap-3 mt-10">
-        {steps.map(({ Icon, t, d }, i) => (
-          <li key={t} className="card p-5">
-            <span className="w-10 h-10 rounded-full bg-brand-50 text-brand-600 flex items-center justify-center"><Icon className="w-5 h-5" /></span>
-            <p className="font-extrabold mt-3">{i + 1}. {t}</p>
-            <p className="text-sm text-stone-600 mt-1">{d}</p>
-          </li>
-        ))}
-      </ol>
-
-      <div className="card p-5 mt-4 flex gap-4 items-start">
-        <span className="w-10 h-10 rounded-full bg-orange-50 text-accent flex items-center justify-center shrink-0"><QrCode className="w-5 h-5" /></span>
-        <div>
-          <p className="font-extrabold">Achou um pet com a plaquinha na coleira?</p>
-          <p className="text-sm text-stone-600">Leia o QR Code com a câmera do celular. A página do pet abre sem precisar de conta, e você avisa o tutor com um toque.</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Cidade() {
   const { user } = useAuth();
   const { setAccountOpen } = useUi();
   const nav = useNavigate();

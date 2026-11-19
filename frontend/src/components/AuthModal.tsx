@@ -9,18 +9,16 @@ import * as v from "../lib/validate";
 type Errors = Record<string, string>;
 const EMPTY = { name: "", email: "", password: "", city: "", uf: "", receiveAlerts: true };
 
-export function AuthModal() {
-  const { loginPrompt, closeLogin, login, register } = useAuth();
-  const [mode, setMode] = useState<"login" | "register">("login");
+/** So o formulario de entrar/criar conta. Usado na pagina /entrar e /cadastro e na janela de entrada. */
+export function AuthForm({ mode, onSwitch, onSuccess, reason }: { mode: "login" | "register"; onSwitch: () => void; onSuccess: () => void; reason?: string }) {
+  const { login, register } = useAuth();
   const [f, setF] = useState(EMPTY);
   const [errors, setErrors] = useState<Errors>({});
   const [err, setErr] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    if (loginPrompt.open) { setMode(loginPrompt.mode ?? "login"); setErrors({}); setErr(""); setShow(false); }
-  }, [loginPrompt.open, loginPrompt.mode]);
+  useEffect(() => { setErrors({}); setErr(""); setShow(false); }, [mode]);
 
   const set = (k: keyof typeof EMPTY, val: string | boolean) => {
     setF((s) => ({ ...s, [k]: val }));
@@ -44,15 +42,15 @@ export function AuthModal() {
     try {
       if (mode === "login") await login(f.email.trim(), f.password);
       else await register({ ...f, name: f.name.trim(), email: f.email.trim() });
-      closeLogin(true);
+      onSuccess();
     } catch (e2) {
       setErr(e2 instanceof ApiError ? e2.message : "Não foi possível entrar.");
     } finally { setBusy(false); }
   };
 
   return (
-    <Modal open={loginPrompt.open} onClose={() => closeLogin(false)} title={mode === "login" ? "Entrar" : "Criar conta"}>
-      {loginPrompt.reason && <p className="text-sm text-stone-600 mb-3">{loginPrompt.reason}</p>}
+    <div>
+      {reason && <p className="text-sm text-stone-600 mb-3">{reason}</p>}
       <form onSubmit={submit} className="space-y-3" noValidate>
         {mode === "register" && (
           <div>
@@ -91,10 +89,21 @@ export function AuthModal() {
       </form>
       <p className="text-sm text-center mt-4">
         {mode === "login" ? "Ainda não tem conta? " : "Já tem conta? "}
-        <button type="button" className="font-bold text-brand-600 cursor-pointer" onClick={() => { setMode(mode === "login" ? "register" : "login"); setErrors({}); setErr(""); }}>
+        <button type="button" className="font-bold text-brand-600 cursor-pointer" onClick={onSwitch}>
           {mode === "login" ? "Criar conta" : "Entrar"}
         </button>
       </p>
+    </div>
+  );
+}
+
+export function AuthModal() {
+  const { loginPrompt, closeLogin } = useAuth();
+  const [mode, setMode] = useState<"login" | "register">("login");
+  useEffect(() => { if (loginPrompt.open) setMode(loginPrompt.mode ?? "login"); }, [loginPrompt.open, loginPrompt.mode]);
+  return (
+    <Modal open={loginPrompt.open} onClose={() => closeLogin(false)} title={mode === "login" ? "Entrar" : "Criar conta"}>
+      <AuthForm mode={mode} reason={loginPrompt.reason} onSwitch={() => setMode(mode === "login" ? "register" : "login")} onSuccess={() => closeLogin(true)} />
     </Modal>
   );
 }

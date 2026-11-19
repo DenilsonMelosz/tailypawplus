@@ -1,39 +1,51 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { ExternalLink, ImagePlus, Plus, Printer, QrCode, Scissors } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Download, ExternalLink, Pencil, Plus, Printer, QrCode, Scissors, Trash2 } from "lucide-react";
 import { Modal } from "./Modal";
 import { CityFields } from "./CityFields";
-import { Select } from "./Select";
+import { PetForm } from "./PetEditor";
+import { ConfirmModal } from "./ConfirmModal";
 import { siteUrl } from "./QrImage";
 import { useAuth } from "../lib/auth";
-import { api, ApiError, media, uploadImage } from "../lib/api";
-import { IMAGE_ACCEPT } from "../lib/files";
+import { api, ApiError, media } from "../lib/api";
 import { SPECIES, alertTitle, ago } from "../lib/format";
-import type { Alert, Pet, Species, User } from "../lib/types";
+import type { Alert, Pet, User } from "../lib/types";
 import { useToast } from "./Toast";
 import { printTag } from "../lib/print";
 import { svgToDataUrl, tagSvg } from "../lib/tagArt";
 import * as v from "../lib/validate";
 
 const STATUS: Record<Alert["status"], string> = { aberto: "Ativo", resolvido: "Resolvido", arquivado: "Arquivado" };
-const SPECIES_OPTIONS = Object.entries(SPECIES).map(([value, label]) => ({ value, label }));
 
 /** Painel lateral (nao e uma tela): meus pets e plaquinhas, meus alertas e preferencias. */
 export function MyAccountDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user, update, logout } = useAuth();
   const toast = useToast();
+  const nav = useNavigate();
+  const [editing, setEditing] = useState<string | null>(null);
+  const [delPet, setDelPet] = useState<Pet | null>(null);
+  const [delBusy, setDelBusy] = useState(false);
+  const [delAcc, setDelAcc] = useState(false);
+  const [accErr, setAccErr] = useState("");
   const [pets, setPets] = useState<Pet[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [adding, setAdding] = useState(false);
   const [tagFor, setTagFor] = useState<Pet | null>(null);
   const [pref, setPref] = useState({ city: user?.city ?? "", uf: user?.uf ?? "", receiveAlerts: user?.receiveAlerts ?? true });
   const [prefErr, setPrefErr] = useState<Record<string, string>>({});
+  const [data, setData] = useState({ name: user?.name ?? "", currentPassword: "", newPassword: "" });
+  const [dataErr, setDataErr] = useState<Record<string, string>>({});
 
   const load = () => {
     api<Pet[]>("/pets").then(setPets).catch(() => {});
     api<Alert[]>("/alerts/mine").then(setAlerts).catch(() => {});
   };
-  useEffect(() => { if (open) { load(); if (user) setPref({ city: user.city, uf: user.uf, receiveAlerts: user.receiveAlerts }); setPrefErr({}); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!open) return;
+    load();
+    if (user) { setPref({ city: user.city, uf: user.uf, receiveAlerts: user.receiveAlerts }); setData({ name: user.name, currentPassword: "", newPassword: "" }); }
+    setPrefErr({}); setDataErr({}); setEditing(null);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const savePref = async () => {
     const e = v.clean({ uf: pref.uf ? undefined : "Escolha o estado.", city: pref.city ? undefined : "Escolha a cidade na lista." });
@@ -41,6 +53,53 @@ export function MyAccountDrawer({ open, onClose }: { open: boolean; onClose: () 
     if (Object.keys(e).length) return;
     try { update(await api<User>("/me", { method: "PATCH", body: pref })); toast("Preferências salvas."); }
     catch (er) { toast(er instanceof ApiError ? er.message : "Não foi possível salvar.", "error"); }
+  };
+
+  const saveData = async () => {
+    const e = v.clean({
+      name: v.name(data.name),
+      currentPassword: data.newPassword && !data.currentPassword ? "Informe a senha atual." : undefined,
+      newPassword: data.newPassword ? v.password(data.newPassword) : undefined,
+    });
+    setDataErr(e);
+    if (Object.keys(e).length) return;
+    try {
+      const body: Record<string, unknown> = { name: data.name.trim() };
+      if (data.newPassword) { body.currentPassword = data.currentPassword; body.newPassword = data.newPassword; }
+      update(await api<User>("/me", { method: "PATCH", body }));
+      setData((d) => ({ ...d, currentPassword: "", newPassword: "" }));
+      toast(data.newPassword ? "Dados e senha salvos." : "Dados salvos.");
+    } catch (er) {
+      if (er instanceof ApiError && er.data?.field === "currentPassword") setDataErr({ currentPassword: er.message });
+      else toast(er instanceof ApiError ? er.message : "Não foi possível salvar.", "error");
+    }
+  };
+
+  const removePet = async () => {
+    if (!delPet) return;
+    setDelBusy(true);
+    try { await api(`/pets/${delPet.id}`, { method: "DELETE" }); setPets((s) => s.filter((x) => x.id !== delPet.id)); toast(`${delPet.name} foi excluído.`); setDelPet(null); load(); }
+    catch (er) { toast(er instanceof ApiError ? er.message : "Não foi possível excluir.", "error"); }
+    finally { setDelBusy(false); }
+  };
+
+  const exportData = async () => {
+    try {
+      const d = await api("/me/export");
+      const url = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }));
+      const a = document.createElement("a"); a.href = url; a.download = "meus-dados-tailypaw.json"; a.click();
+      URL.revokeObjectURL(url);
+    } catch (er) { toast(er instanceof ApiError ? er.message : "Não foi possível baixar.", "error"); }
+  };
+
+  const removeAccount = async (password: string) => {
+    setDelBusy(true); setAccErr("");
+    try {
+      await api("/me", { method: "DELETE", body: { password } });
+      setDelAcc(false); onClose(); logout(); nav("/");
+      toast("Sua conta e seus dados foram apagados.");
+    } catch (er) { setAccErr(er instanceof ApiError ? er.message : "Não foi possível apagar a conta."); }
+    finally { setDelBusy(false); }
   };
 
   return (
@@ -55,7 +114,9 @@ export function MyAccountDrawer({ open, onClose }: { open: boolean; onClose: () 
           {adding && <PetForm onDone={(p) => { setAdding(false); setPets((s) => [...s, p]); setTagFor(p); }} />}
           {pets.length === 0 && !adding && <p className="text-sm text-stone-500">Nenhum pet cadastrado.</p>}
           <ul className="space-y-2">
-            {pets.map((p) => (
+            {pets.map((p) => editing === p.id ? (
+              <li key={p.id}><PetForm pet={p} onCancel={() => setEditing(null)} onDone={(np) => { setPets((s) => s.map((x) => (x.id === np.id ? np : x))); setEditing(null); }} /></li>
+            ) : (
               <li key={p.id} className="card p-3">
                 <div className="flex items-center gap-3">
                   <Link to={`/p/${p.tagCode}`} onClick={onClose} className="shrink-0" aria-label={`Abrir a página de ${p.name}`}>
@@ -70,6 +131,8 @@ export function MyAccountDrawer({ open, onClose }: { open: boolean; onClose: () 
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   <Link to={`/p/${p.tagCode}`} onClick={onClose} className="btn-ghost h-9 px-3 text-sm"><ExternalLink className="w-4 h-4" />Página do pet</Link>
                   <button type="button" className="btn-ghost h-9 px-3 text-sm" onClick={() => setTagFor(p)}><QrCode className="w-4 h-4" />Plaquinha</button>
+                  <button type="button" className="btn-ghost h-9 px-3 text-sm" onClick={() => setEditing(p.id)}><Pencil className="w-4 h-4" />Editar</button>
+                  <button type="button" className="btn-ghost h-9 px-3 text-sm text-red-700" onClick={() => setDelPet(p)}><Trash2 className="w-4 h-4" />Excluir</button>
                 </div>
               </li>
             ))}
@@ -96,6 +159,35 @@ export function MyAccountDrawer({ open, onClose }: { open: boolean; onClose: () 
         </section>
 
         <section className="mb-6 space-y-3">
+          <h3 className="font-bold">Meus dados</h3>
+          <div>
+            <label className="label" htmlFor="md-name">Nome</label>
+            <input id="md-name" className={`input ${dataErr.name ? "!border-red-500" : ""}`} maxLength={80} value={data.name} onChange={(e) => { setData({ ...data, name: e.target.value }); setDataErr({}); }} autoComplete="name" />
+            {dataErr.name && <p className="field-error">{dataErr.name}</p>}
+          </div>
+          <div>
+            <p className="label">E-mail</p>
+            <p className="text-sm text-stone-600">{user?.email}</p>
+          </div>
+          <details className="rounded-xl border border-stone-200 p-3">
+            <summary className="font-semibold text-sm cursor-pointer">Trocar a senha</summary>
+            <div className="space-y-2 mt-3">
+              <div>
+                <label className="label" htmlFor="md-cur">Senha atual</label>
+                <input id="md-cur" type="password" className={`input ${dataErr.currentPassword ? "!border-red-500" : ""}`} maxLength={100} value={data.currentPassword} autoComplete="current-password" onChange={(e) => { setData({ ...data, currentPassword: e.target.value }); setDataErr({}); }} />
+                {dataErr.currentPassword && <p className="field-error">{dataErr.currentPassword}</p>}
+              </div>
+              <div>
+                <label className="label" htmlFor="md-new">Nova senha</label>
+                <input id="md-new" type="password" className={`input ${dataErr.newPassword ? "!border-red-500" : ""}`} maxLength={100} value={data.newPassword} autoComplete="new-password" onChange={(e) => { setData({ ...data, newPassword: e.target.value }); setDataErr({}); }} />
+                {dataErr.newPassword ? <p className="field-error">{dataErr.newPassword}</p> : <p className="text-xs text-stone-500 mt-1">Pelo menos 6 caracteres.</p>}
+              </div>
+            </div>
+          </details>
+          <button type="button" className="btn-primary w-full" onClick={saveData}>Salvar meus dados</button>
+        </section>
+
+        <section className="mb-6 space-y-3">
           <h3 className="font-bold">Minha cidade e alertas</h3>
           <CityFields idPrefix="pref" city={pref.city} uf={pref.uf} onChange={(city, uf) => { setPref({ ...pref, city, uf }); setPrefErr({}); }} errors={prefErr} />
           <label className="flex items-start gap-3 text-sm cursor-pointer">
@@ -105,76 +197,26 @@ export function MyAccountDrawer({ open, onClose }: { open: boolean; onClose: () 
           <button type="button" className="btn-primary w-full" onClick={savePref}>Salvar preferências</button>
         </section>
 
-        <button type="button" className="btn-ghost w-full" onClick={() => { logout(); onClose(); }}>Sair da conta</button>
+        <section className="mb-6 rounded-2xl border border-red-200 bg-red-50/50 p-4 space-y-3">
+          <h3 className="font-bold">Privacidade e seus dados (LGPD)</h3>
+          <p className="text-sm text-stone-700">Você pode baixar uma cópia dos seus dados ou apagar a conta. Ao apagar, seus pets, plaquinhas, alertas, fotos, conversas e seguidores são excluídos para sempre.</p>
+          <button type="button" className="btn-ghost w-full" onClick={exportData}><Download className="w-4 h-4" />Baixar meus dados</button>
+          <button type="button" className="btn-danger w-full" onClick={() => { setAccErr(""); setDelAcc(true); }}><Trash2 className="w-4 h-4" />Apagar minha conta</button>
+        </section>
+
+        <button type="button" className="btn-ghost w-full" onClick={() => { logout(); onClose(); nav("/"); }}>Sair da conta</button>
       </Modal>
+      <ConfirmModal open={!!delPet} title={`Excluir ${delPet?.name ?? "pet"}?`} confirmLabel="Excluir pet" busy={delBusy} onClose={() => setDelPet(null)} onConfirm={removePet}>
+        <p>O cadastro e a foto de <b>{delPet?.name}</b> serão apagados e a plaquinha impressa <b>deixa de funcionar</b>. As leituras da plaquinha também são apagadas.</p>
+        {delPet?.openAlertId && <p className="text-red-700 font-semibold">Este pet tem um alerta ativo. O alerta continua publicado, sem o vínculo com o cadastro.</p>}
+        <p>Essa ação não pode ser desfeita.</p>
+      </ConfirmModal>
+      <ConfirmModal open={delAcc} title="Apagar minha conta?" confirmLabel="Apagar tudo" askPassword busy={delBusy} error={accErr} onClose={() => setDelAcc(false)} onConfirm={removeAccount}>
+        <p>Serão apagados para sempre: seu cadastro, <b>seus pets e plaquinhas</b>, alertas, fotos, conversas, mensagens e quem você segue.</p>
+        <p>Plaquinhas já impressas deixam de funcionar. Essa ação não pode ser desfeita.</p>
+      </ConfirmModal>
       <TagModal pet={tagFor} onClose={() => setTagFor(null)} onNavigate={onClose} />
     </>
-  );
-}
-
-function PetForm({ onDone }: { onDone: (p: Pet) => void }) {
-  const toast = useToast();
-  const [f, setF] = useState({ name: "", species: "cao" as Species, breed: "", color: "" });
-  const [photo, setPhoto] = useState<{ id: string; url: string } | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [uploading, setUploading] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const set = (k: keyof typeof f, val: string) => { setF((s) => ({ ...s, [k]: val })); setErrors((e) => { if (!e[k]) return e; const n = { ...e }; delete n[k]; return n; }); };
-
-  const pick = async (file?: File) => {
-    if (!file) return;
-    setUploading(true);
-    try { setPhoto(await uploadImage(file)); setErrors((e) => { const n = { ...e }; delete n.photo; return n; }); }
-    catch (er) { setErrors((e) => ({ ...e, photo: er instanceof ApiError ? er.message : "Falha ao enviar a foto." })); }
-    finally { setUploading(false); }
-  };
-
-  const save = async () => {
-    const e = v.clean({
-      name: f.name.trim() ? v.maxLen(f.name, 60, "Nome") : "Informe o nome do pet.",
-      breed: f.breed.trim() ? v.maxLen(f.breed, 60, "Raça") : "Informe a raça ou escreva SRD.",
-      color: v.maxLen(f.color, 60, "Cor e sinais"),
-    });
-    setErrors((old) => ({ ...e, ...(old.photo ? { photo: old.photo } : {}) }));
-    if (Object.keys(e).length) return;
-    setBusy(true);
-    try { onDone(await api<Pet>("/pets", { body: { ...f, name: f.name.trim(), breed: f.breed.trim(), color: f.color.trim() || null, photoId: photo?.id ?? null } })); toast("Pet cadastrado. Imprima a plaquinha!"); }
-    catch (er) { toast(er instanceof ApiError ? er.message : "Não foi possível cadastrar.", "error"); }
-    finally { setBusy(false); }
-  };
-
-  return (
-    <div className="card p-3 mb-3 space-y-3">
-      <div>
-        <label className="label" htmlFor="pn">Nome do pet *</label>
-        <input id="pn" className={`input ${errors.name ? "!border-red-500" : ""}`} maxLength={60} value={f.name} onChange={(e) => set("name", e.target.value)} />
-        {errors.name && <p className="field-error">{errors.name}</p>}
-      </div>
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="label" htmlFor="ps">Espécie *</label>
-          <Select id="ps" value={f.species} options={SPECIES_OPTIONS} onChange={(val) => set("species", val)} />
-        </div>
-        <div>
-          <label className="label" htmlFor="pb">Raça *</label>
-          <input id="pb" className={`input ${errors.breed ? "!border-red-500" : ""}`} maxLength={60} placeholder="Ou SRD" value={f.breed} onChange={(e) => set("breed", e.target.value)} />
-          {errors.breed && <p className="field-error">{errors.breed}</p>}
-        </div>
-      </div>
-      <div>
-        <label className="label" htmlFor="pc">Cor e sinais</label>
-        <input id="pc" className={`input ${errors.color ? "!border-red-500" : ""}`} maxLength={60} value={f.color} onChange={(e) => set("color", e.target.value)} />
-        {errors.color && <p className="field-error">{errors.color}</p>}
-      </div>
-      <div>
-        <label className="btn-ghost w-full">
-          <ImagePlus className="w-4 h-4" />{uploading ? "Enviando..." : photo ? "Foto adicionada ✓ (trocar)" : "Adicionar foto (JPG, PNG ou WEBP)"}
-          <input type="file" accept={IMAGE_ACCEPT} className="hidden" disabled={uploading} onChange={(e) => { pick(e.target.files?.[0]); e.target.value = ""; }} />
-        </label>
-        {errors.photo && <p className="field-error">{errors.photo}</p>}
-      </div>
-      <button type="button" className="btn-primary w-full" disabled={busy || uploading} onClick={save}>{busy ? "Salvando..." : "Salvar pet"}</button>
-    </div>
   );
 }
 

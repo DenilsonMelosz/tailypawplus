@@ -134,6 +134,46 @@ ok(r.status === 400, "nao abre conversa consigo mesmo");
 r = await call("DELETE", `/users/${vizId}/follow`, undefined, tutor.token);
 ok(r.json.following === false && (await call("GET", "/users/connections", undefined, tutor.token)).json.following.length === 0, "deixar de seguir");
 
+// ---- RF14/RF15/RF16: editar e excluir pet, dados da conta e apagar a conta (LGPD)
+const ph2 = (await call("POST", "/images", { dataUrl: PNG }, longe.token)).json;
+const ph3 = (await call("POST", "/images", { dataUrl: PNG }, longe.token)).json;
+const petL = (await call("POST", "/pets", { name: "Mel", species: "gato", breed: "SRD", photoId: ph2.id }, longe.token)).json;
+r = await call("PATCH", `/pets/${petL.id}`, { name: "Mel Maria", color: "Branca", photoId: ph3.id }, vizinho.token);
+ok(r.status === 404, "RF14 so o tutor edita o pet");
+r = await call("PATCH", `/pets/${petL.id}`, { name: "" }, longe.token);
+ok(r.status === 400, "RF14 nome do pet continua obrigatorio");
+r = await call("PATCH", `/pets/${petL.id}`, { name: "Mel Maria", color: "Branca", photoId: ph3.id }, longe.token);
+ok(r.status === 200 && r.json.name === "Mel Maria" && r.json.color === "Branca" && r.json.photo.endsWith(ph3.id) && r.json.tagCode === petL.tagCode, "RF14 edita nome, dados e foto sem mudar a plaquinha");
+r = await call("GET", `/images/${ph2.id}`);
+ok(r.status === 404, "foto antiga do pet e apagada (LGPD)");
+r = await call("PATCH", `/pets/${petL.id}`, { photoId: null, size: "pequeno" }, longe.token);
+ok(r.json.photo === null && r.json.size === "pequeno", "RF14 remove a foto do pet");
+r = await call("DELETE", `/pets/${petL.id}`, undefined, vizinho.token);
+ok(r.status === 404, "RF15 so o tutor apaga o pet");
+r = await call("DELETE", `/pets/${petL.id}`, undefined, longe.token);
+ok(r.status === 200, "RF15 apaga o pet");
+r = await call("GET", `/tags/${petL.tagCode}`);
+ok(r.status === 404, "RF15 a plaquinha do pet apagado deixa de abrir");
+
+r = await call("PATCH", "/me", { name: "Longe da Silva" }, longe.token);
+ok(r.status === 200 && r.json.name === "Longe da Silva", "RF16 edita o nome da conta");
+r = await call("PATCH", "/me", { newPassword: "novasenha1", currentPassword: "errada" }, longe.token);
+ok(r.status === 403, "troca de senha exige a senha atual");
+r = await call("PATCH", "/me", { newPassword: "novasenha1", currentPassword: "123456" }, longe.token);
+ok(r.status === 200 && (await call("POST", "/auth/login", { email: "l@x.com", password: "novasenha1" })).status === 200, "troca de senha funciona");
+r = await call("GET", "/me/export", undefined, longe.token);
+ok(r.status === 200 && r.json.conta.email === "l@x.com" && !JSON.stringify(r.json).includes("password"), "RF16 exporta os dados da conta, sem a senha");
+r = await call("DELETE", "/me", { password: "errada" }, longe.token);
+ok(r.status === 403, "RF16 apagar a conta exige a senha");
+r = await call("DELETE", "/me", { password: "novasenha1" }, longe.token);
+ok(r.status === 200, "RF16 apaga a conta");
+r = await call("GET", "/me", undefined, longe.token);
+ok(r.status === 401, "depois de apagada, a conta nao entra mais");
+r = await call("POST", "/auth/login", { email: "l@x.com", password: "novasenha1" });
+ok(r.status === 401, "o e-mail apagado nao faz login");
+r = await call("GET", `/images/${ph3.id}`);
+ok(r.status === 404, "as fotos da conta apagada tambem somem");
+
 server.close();
 console.log(fails ? `\n${fails} falha(s)` : "\nTodas as regras passaram.");
 process.exit(fails ? 1 : 0);

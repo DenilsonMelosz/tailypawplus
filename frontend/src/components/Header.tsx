@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Bell, MessageCircle, UserRound } from "lucide-react";
+import { Bell, MapPinned, MessageCircle, UserRound } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 import { ago } from "../lib/format";
@@ -9,7 +9,7 @@ import { MyAccountDrawer } from "./MyAccountDrawer";
 import { useUi } from "../lib/ui";
 
 export function Header() {
-  const { user, requireLogin } = useAuth();
+  const { user } = useAuth();
   const nav = useNavigate();
   const [notif, setNotif] = useState<{ unread: number; items: Notification[] }>({ unread: 0, items: [] });
   const [openBell, setOpenBell] = useState(false);
@@ -43,12 +43,13 @@ export function Header() {
   return (
     <header className="sticky top-0 z-[1000] bg-white/95 backdrop-blur border-b border-stone-200 no-print">
       <div className="max-w-5xl mx-auto h-16 px-4 flex items-center gap-2">
-        <Link to="/" className="flex items-center" aria-label="TailyPaw+ - início">
+        <Link to={user ? "/resgate" : "/"} className="flex items-center" aria-label="TailyPaw+ - início">
           <img src="/logo_horizontal.png" alt="TailyPaw+" className="h-11 w-auto" />
         </Link>
         <div className="flex-1" />
         {user ? (
           <>
+            <Link to="/resgate" className="w-10 h-10 rounded-full hover:bg-stone-100 flex items-center justify-center" aria-label="Mapa da cidade"><MapPinned className="w-5 h-5" /></Link>
             <Link to="/conversas" className="w-10 h-10 rounded-full hover:bg-stone-100 flex items-center justify-center" aria-label="Conversas"><MessageCircle className="w-5 h-5" /></Link>
             <div className="relative" ref={bellRef}>
               <button type="button" onClick={toggleBell} className="relative w-10 h-10 rounded-full hover:bg-stone-100 flex items-center justify-center cursor-pointer" aria-label={`Notificações${notif.unread ? `: ${notif.unread} novas` : ""}`}>
@@ -78,7 +79,10 @@ export function Header() {
             <MyAccountDrawer open={accountOpen} onClose={() => setAccountOpen(false)} />
           </>
         ) : (
-          <button type="button" className="btn-primary h-10" onClick={() => requireLogin(undefined, "login")}>Entrar</button>
+          <>
+            <Link to="/cadastro" className="hidden sm:inline-flex h-10 items-center px-4 text-sm font-bold text-brand-700">Criar conta</Link>
+            <Link to="/entrar" className="btn-primary h-10">Entrar</Link>
+          </>
         )}
       </div>
     </header>

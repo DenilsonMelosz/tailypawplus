@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
 type Kind = "ok" | "error";
 const Ctx = createContext<(msg: string, kind?: Kind) => void>(() => {});
@@ -11,6 +11,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setItems((s) => [...s, { id, msg, kind }]);
     setTimeout(() => setItems((s) => s.filter((i) => i.id !== id)), 4200);
   }, []);
+  // avisos vindos de fora do React (ex.: bloqueio de pop-up na impressao)
+  useEffect(() => {
+    const on = (e: Event) => { const d = (e as CustomEvent<{ msg: string; kind?: Kind }>).detail; show(d.msg, d.kind); };
+    window.addEventListener("tp:toast", on);
+    return () => window.removeEventListener("tp:toast", on);
+  }, [show]);
   return (
     <Ctx.Provider value={show}>
       {children}

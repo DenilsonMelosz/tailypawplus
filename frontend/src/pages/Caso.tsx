@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { CalendarClock, CheckCircle2, Download, Heart, MapPin, MessageCircle, Printer, Scissors, Share2, Siren, Trash2 } from "lucide-react";
+import { CalendarClock, CheckCircle2, Download, Heart, MapPin, MessageCircle, Pencil, Printer, Scissors, Share2, Siren, Trash2 } from "lucide-react";
+import { PetForm } from "../components/PetEditor";
+import { ConfirmModal } from "../components/ConfirmModal";
 import { api, ApiError, media } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { SEXES, SIZES, SPECIES, alertTitle, ago, currentPosition, dateTime } from "../lib/format";
@@ -96,7 +98,7 @@ export function CasoPage() {
         {a.reward && <div className="mt-3 rounded-xl border border-orange-300 bg-orange-50 px-4 py-2 font-bold text-orange-800">Recompensa: {a.reward}</div>}
 
         {a.isMine ? (
-          <OwnerActions a={a} busy={busy} run={run} onPoster={() => setPoster(true)} onDeleted={() => nav("/")} />
+          <OwnerActions a={a} busy={busy} run={run} onPoster={() => setPoster(true)} onDeleted={() => nav("/resgate")} />
         ) : a.status === "aberto" ? (
           <div className="space-y-2 mt-5">
             {a.type === "avistado" && <button type="button" className="btn-danger w-full" onClick={claim}><Heart className="w-5 h-5" />Sou o dono</button>}
@@ -121,6 +123,7 @@ function OwnerActions({ a, busy, run, onPoster, onDeleted }: {
   a: Alert; busy: boolean; run: (fn: () => Promise<unknown>, ok: string) => Promise<void>; onPoster: () => void; onDeleted: () => void;
 }) {
   const toast = useToast();
+  const [confirmDel, setConfirmDel] = useState(false);
   const [scans, setScans] = useState<{ id: string; lat: number; lng: number; message: string | null; createdAt: string }[]>([]);
   useEffect(() => { if (a.petId) api(`/pets/${a.petId}/scans`).then(setScans).catch(() => {}); }, [a.petId]);
 
@@ -162,9 +165,17 @@ function OwnerActions({ a, busy, run, onPoster, onDeleted }: {
         </div>
       )}
       <button type="button" className="text-sm text-red-600 font-semibold flex items-center gap-1 cursor-pointer" disabled={busy}
-        onClick={async () => { if (confirm("Excluir este alerta?")) { await run(() => api(`/alerts/${a.id}`, { method: "DELETE" }), "Alerta excluído."); onDeleted(); } }}>
+        onClick={() => setConfirmDel(true)}>
         <Trash2 className="w-4 h-4" />Excluir alerta
       </button>
+      <ConfirmModal open={confirmDel} title="Excluir este alerta?" confirmLabel="Excluir alerta" busy={busy} onClose={() => setConfirmDel(false)}
+        onConfirm={async () => {
+          try { await api(`/alerts/${a.id}`, { method: "DELETE" }); toast("Alerta excluído."); setConfirmDel(false); onDeleted(); }
+          catch (e) { toast(e instanceof ApiError ? e.message : "Não foi possível excluir.", "error"); setConfirmDel(false); }
+        }}>
+        <p>O alerta de <b>{alertTitle(a)}</b> sai do mapa e da lista, e as conversas ligadas a ele deixam de mostrar o caso.</p>
+        <p>Se o pet foi encontrado, prefira <b>Marcar como resolvido</b>. Excluir não pode ser desfeito.</p>
+      </ConfirmModal>
     </div>
   );
 }
@@ -214,6 +225,9 @@ export function TagPage() {
   const [busy, setBusy] = useState(false);
   const [scans, setScans] = useState<{ id: string; lat: number; lng: number; message: string | null; createdAt: string }[]>([]);
   const [tagImg, setTagImg] = useState("");
+  const [editPet, setEditPet] = useState(false);
+  const [delPet, setDelPet] = useState(false);
+  const nav = useNavigate();
 
   useEffect(() => { api(`/tags/${code}`).then(setPet).catch((e) => setErr(e instanceof ApiError ? e.message : "Erro ao carregar.")); }, [code]);
   useEffect(() => { if (pet?.isOwner) api(`/pets/${pet.petId}/scans`).then(setScans).catch(() => {}); }, [pet?.isOwner, pet?.petId]);
@@ -265,6 +279,10 @@ export function TagPage() {
                 : <Link to={`/publicar?pet=${pet.petId}`} className="btn-danger"><Siren className="w-4 h-4" />Ele se perdeu</Link>}
             </div>
             <p className="text-xs text-stone-500 mt-3 flex gap-2"><Scissors className="w-4 h-4 shrink-0" />Recorte no tamanho que caber na coleira e use um porta-plaquinha transparente para pendurar.</p>
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <button type="button" className="btn-ghost" onClick={() => setEditPet(true)}><Pencil className="w-4 h-4" />Editar pet</button>
+              <button type="button" className="btn-ghost text-red-700" onClick={() => setDelPet(true)}><Trash2 className="w-4 h-4" />Excluir pet</button>
+            </div>
           </div>
           <div className="card p-4">
             <p className="font-bold">Leituras da plaquinha ({scans.length})</p>
@@ -288,6 +306,23 @@ export function TagPage() {
           <p className="text-xs text-stone-500">Sua localização só é enviada se você tocar no botão. Não precisa de conta.</p>
           {pet.lostAlertId && <Link to={`/caso/${pet.lostAlertId}`} className="btn-ghost w-full">Ver o alerta de desaparecimento</Link>}
         </div>
+      )}
+      {pet.isOwner && (
+        <>
+          <Modal open={editPet} onClose={() => setEditPet(false)} title={`Editar ${pet.name}`}>
+            <PetForm pet={{ ...pet, id: pet.petId, tagCode: code ?? "" }} onCancel={() => setEditPet(false)}
+              onDone={() => { setEditPet(false); api(`/tags/${code}`).then(setPet).catch(() => {}); }} />
+          </Modal>
+          <ConfirmModal open={delPet} title={`Excluir ${pet.name}?`} confirmLabel="Excluir pet" onClose={() => setDelPet(false)}
+            onConfirm={async () => {
+              try { await api(`/pets/${pet.petId}`, { method: "DELETE" }); toast(`${pet.name} foi excluído.`); nav("/resgate"); }
+              catch (e) { toast(e instanceof ApiError ? e.message : "Não foi possível excluir.", "error"); }
+            }}>
+            <p>O cadastro e a foto serão apagados e a plaquinha impressa <b>deixa de funcionar</b>. As leituras da plaquinha também são apagadas.</p>
+            {pet.lostAlertId && <p className="text-red-700 font-semibold">Este pet tem um alerta ativo. O alerta continua publicado, sem o vínculo com o cadastro.</p>}
+            <p>Essa ação não pode ser desfeita.</p>
+          </ConfirmModal>
+        </>
       )}
     </div>
   );
