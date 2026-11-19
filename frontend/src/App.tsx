@@ -4,6 +4,7 @@ import { AuthModal } from "./components/AuthModal";
 import Home from "./pages/Home";
 import Entrar from "./pages/Entrar";
 import Resgate from "./pages/Resgate";
+import Conta from "./pages/Conta";
 import { PrivateRoute } from "./components/PrivateRoute";
 import Publicar from "./pages/Publicar";
 import { CasoPage, TagPage } from "./pages/Caso";
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="/p/:code" element={<TagPage />} />
           <Route element={<PrivateRoute />}>
             <Route path="/resgate" element={<Resgate />} />
+            <Route path="/conta" element={<Conta />} />
             <Route path="/publicar" element={<Publicar />} />
             <Route path="/conversas" element={<Conversas />} />
             <Route path="/conversas/:id" element={<Conversas />} />

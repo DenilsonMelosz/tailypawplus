@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { MapPinned, PawPrint, Plus, SearchX } from "lucide-react";
 import { api, ApiError } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { useUi } from "../lib/ui";
 import { cityCenter } from "../lib/geo";
 import type { Alert } from "../lib/types";
 import { AlertCard } from "../components/AlertCard";
@@ -15,7 +14,6 @@ type Filter = "perdido" | "avistado" | "todos";
 /** T1 Resgate: mapa e lista dos casos ativos da cidade (RF04). Rota privada. */
 export default function Resgate() {
   const { user } = useAuth();
-  const { setAccountOpen } = useUi();
   const nav = useNavigate();
   const [filter, setFilter] = useState<Filter>("todos");
   const [city, setCity] = useState({ city: user!.city, uf: user!.uf });
@@ -64,7 +62,7 @@ export default function Resgate() {
           ))}
         </div>
         <div className="flex-1" />
-        <button type="button" onClick={() => setAccountOpen(true)} className="h-9 px-4 rounded-full text-sm font-bold border border-stone-300 bg-white flex items-center gap-2 cursor-pointer"><PawPrint className="w-4 h-4 text-brand-600" />Meus pets e plaquinhas</button>
+        <Link to="/conta?aba=pets" className="h-9 px-4 rounded-full text-sm font-bold border border-stone-300 bg-white flex items-center gap-2"><PawPrint className="w-4 h-4 text-brand-600" />Meus pets e plaquinhas</Link>
       </div>
 
       <div className="grid lg:grid-cols-[1fr_380px] gap-4">

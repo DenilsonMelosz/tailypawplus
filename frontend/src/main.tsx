@@ -5,16 +5,13 @@ import "./index.css";
 import App from "./App";
 import { AuthProvider } from "./lib/auth";
 import { ToastProvider } from "./components/Toast";
-import { UiProvider } from "./lib/ui";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <ToastProvider>
         <AuthProvider>
-          <UiProvider>
-            <App />
-          </UiProvider>
+          <App />
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>

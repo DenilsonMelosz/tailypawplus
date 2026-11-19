@@ -10,6 +10,7 @@ As quatro telas: **T1 Resgate** (`/`), **T2 Publicar alerta** (`/publicar`), **T
 Login e "Meus pets e alertas" são janelas sobre as telas, e não telas novas.
 `/` é a página inicial pública que apresenta o MVP; `/entrar` e `/cadastro` mostram só o formulário. O mapa e a lista da cidade ficam em `/resgate`, e `/publicar` e `/conversas` também são rotas privadas (sem conta ativa vão para `/entrar`). `/caso/:id` e `/p/:codigo` abrem sem login, por causa do QR do cartaz e da plaquinha.
 Em Conversas há a aba **Pessoas** (buscar pelo nome, seguir e conversar). A cidade é escolhida em lista do IBGE, e as fotos aceitam só JPG, PNG e WEBP.
+Minha conta (`/conta`, aberta pelo menu do avatar) tem as abas Meus pets, Meus alertas, Meus dados e Privacidade.
 LGPD: o tutor edita e exclui o pet (a plaquinha deixa de abrir) e, em Minha conta, corrige os dados, baixa uma cópia (`GET /api/me/export`) e apaga a conta com a senha (`DELETE /api/me`), o que remove pets, alertas, fotos, conversas e seguidores.
 
 ## Rodar no computador

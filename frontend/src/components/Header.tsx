@@ -1,20 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Bell, MapPinned, MessageCircle, UserRound } from "lucide-react";
+import { Bell, LogOut, MapPinned, MessageCircle, PawPrint, Settings2, Siren, UserRound } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 import { ago } from "../lib/format";
 import type { Notification } from "../lib/types";
-import { MyAccountDrawer } from "./MyAccountDrawer";
-import { useUi } from "../lib/ui";
 
 export function Header() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const nav = useNavigate();
   const [notif, setNotif] = useState<{ unread: number; items: Notification[] }>({ unread: 0, items: [] });
   const [openBell, setOpenBell] = useState(false);
-  const { accountOpen, setAccountOpen } = useUi();
+  const [openMenu, setOpenMenu] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!user) { setNotif({ unread: 0, items: [] }); return; }
@@ -26,7 +25,10 @@ export function Header() {
   }, [user]);
 
   useEffect(() => {
-    const close = (e: MouseEvent) => { if (bellRef.current && !bellRef.current.contains(e.target as Node)) setOpenBell(false); };
+    const close = (e: MouseEvent) => {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setOpenBell(false);
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpenMenu(false);
+    };
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, []);
@@ -73,10 +75,27 @@ export function Header() {
                 </div>
               )}
             </div>
-            <button type="button" onClick={() => setAccountOpen(true)} className="w-10 h-10 rounded-full bg-brand-50 text-brand-700 font-bold flex items-center justify-center cursor-pointer" aria-label="Minha conta">
-              {user.name.trim()[0]?.toUpperCase() ?? <UserRound className="w-5 h-5" />}
-            </button>
-            <MyAccountDrawer open={accountOpen} onClose={() => setAccountOpen(false)} />
+            <div className="relative" ref={menuRef}>
+              <button type="button" onClick={() => setOpenMenu((o) => !o)} aria-haspopup="menu" aria-expanded={openMenu} className="w-10 h-10 rounded-full bg-brand-50 text-brand-700 font-bold flex items-center justify-center cursor-pointer" aria-label="Menu da conta">
+                {user.name.trim()[0]?.toUpperCase() ?? <UserRound className="w-5 h-5" />}
+              </button>
+              {openMenu && (
+                <div role="menu" className="absolute right-0 mt-2 w-64 card overflow-hidden">
+                  <div className="px-4 py-3 border-b border-stone-100">
+                    <p className="font-bold truncate">{user.name}</p>
+                    <p className="text-xs text-stone-500 truncate">{user.email}</p>
+                  </div>
+                  {[
+                    { to: "/conta?aba=pets", label: "Meus pets e plaquinhas", Icon: PawPrint },
+                    { to: "/conta?aba=alertas", label: "Meus alertas", Icon: Siren },
+                    { to: "/conta?aba=dados", label: "Meus dados e preferências", Icon: Settings2 },
+                  ].map(({ to, label, Icon }) => (
+                    <Link key={to} role="menuitem" to={to} onClick={() => setOpenMenu(false)} className="flex items-center gap-3 px-4 py-3 text-sm font-semibold hover:bg-stone-50"><Icon className="w-4 h-4 text-brand-600" />{label}</Link>
+                  ))}
+                  <button type="button" role="menuitem" onClick={() => { setOpenMenu(false); logout(); nav("/"); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-50 border-t border-stone-100 cursor-pointer"><LogOut className="w-4 h-4" />Sair da conta</button>
+                </div>
+              )}
+            </div>
           </>
         ) : (
           <>
