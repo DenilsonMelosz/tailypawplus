@@ -10,8 +10,8 @@ interface AuthCtx {
   logout: () => void;
   update: (u: User) => void;
   /** Abre a janela de login; resolve true quando a pessoa entra. */
-  requireLogin: (reason?: string) => Promise<boolean>;
-  loginPrompt: { open: boolean; reason?: string };
+  requireLogin: (reason?: string, mode?: "login" | "register") => Promise<boolean>;
+  loginPrompt: { open: boolean; reason?: string; mode?: "login" | "register" };
   closeLogin: (ok: boolean) => void;
 }
 
@@ -21,7 +21,7 @@ export const useAuth = () => useContext(Ctx);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
-  const [prompt, setPrompt] = useState<{ open: boolean; reason?: string; resolve?: (ok: boolean) => void }>({ open: false });
+  const [prompt, setPrompt] = useState<{ open: boolean; reason?: string; mode?: "login" | "register"; resolve?: (ok: boolean) => void }>({ open: false });
 
   useEffect(() => {
     if (!getToken()) { setReady(true); return; }
@@ -40,9 +40,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
   const logout = () => { setToken(null); setUser(null); };
 
-  const requireLogin = useCallback((reason?: string) => {
+  const requireLogin = useCallback((reason?: string, mode?: "login" | "register") => {
     if (user) return Promise.resolve(true);
-    return new Promise<boolean>((resolve) => setPrompt({ open: true, reason, resolve }));
+    return new Promise<boolean>((resolve) => setPrompt({ open: true, reason, mode, resolve }));
   }, [user]);
   const closeLogin = (ok: boolean) => { prompt.resolve?.(ok); setPrompt({ open: false }); };
 

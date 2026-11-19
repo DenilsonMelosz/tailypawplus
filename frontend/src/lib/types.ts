@@ -45,3 +45,5 @@ export interface Conversation {
 }
 
 export interface Message { id: string; body: string; mine: boolean; createdAt: string }
+
+export interface Person { id: string; name: string; city: string; uf: string; following: boolean; followsMe: boolean }

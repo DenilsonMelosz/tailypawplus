@@ -1,21 +1,31 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, Crosshair, ImagePlus, Search, Siren, X } from "lucide-react";
 import { api, ApiError, media, uploadImage } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { SEXES, SIZES, SPECIES, currentPosition } from "../lib/format";
+import { IMAGE_ACCEPT } from "../lib/files";
+import { cityCenter } from "../lib/geo";
+import * as v from "../lib/validate";
 import type { Alert, Pet, Sex, Size, Species } from "../lib/types";
 import { CityFields } from "../components/CityFields";
 import { LocationPicker } from "../components/MapView";
+import { Select } from "../components/Select";
 import { useToast } from "../components/Toast";
 
 const STEPS = ["Tipo", "Pet", "Fotos", "Detalhes", "Revisão"];
+const opts = (o: Record<string, string>) => Object.entries(o).map(([value, label]) => ({ value, label }));
+const SPECIES_OPTIONS = opts(SPECIES);
+const SIZE_OPTIONS = [{ value: "", label: "Não informar" }, ...opts(SIZES)];
+const SEX_OPTIONS = [{ value: "", label: "Não informar" }, ...opts(SEXES)];
+const nowLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 type Errors = Partial<Record<string, string>>;
 
 /** T2 Publicar alerta: fluxo guiado em 5 passos (RF01, RF02, RNF01). */
 export default function Publicar() {
   const { user, ready, requireLogin } = useAuth();
   const nav = useNavigate();
+  const [search] = useSearchParams();
   const toast = useToast();
   const [step, setStep] = useState(0);
   const [type, setType] = useState<"perdido" | "avistado" | null>(null);
@@ -30,13 +40,27 @@ export default function Publicar() {
   const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
   const [dup, setDup] = useState<string | null>(null);
+  const [center, setCenter] = useState<[number, number] | null>(null);
 
   useEffect(() => {
     if (!ready) return;
     if (!user) { requireLogin("Entre para publicar um alerta.").then((ok) => !ok && nav("/")); return; }
     setLoc({ city: user.city, uf: user.uf });
-    api<Pet[]>("/pets").then(setPets).catch(() => {});
+    api<Pet[]>("/pets").then((list) => {
+      setPets(list);
+      // vindo da pagina do pet ("Publicar alerta de perdido"): ja escolhe o pet e pula para as fotos
+      const wanted = search.get("pet");
+      const p = wanted ? list.find((x) => x.id === wanted && !x.openAlertId) : null;
+      if (p) { setType("perdido"); setPetId(p.id); setPetChosen(true); setStep(2); }
+    }).catch(() => {});
   }, [ready, user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // o mapa abre na cidade escolhida
+  useEffect(() => {
+    let alive = true;
+    if (loc.city && loc.uf) cityCenter(loc.city, loc.uf).then((c) => alive && setCenter(c)); else setCenter(null);
+    return () => { alive = false; };
+  }, [loc.city, loc.uf]);
 
   const pet = pets.find((p) => p.id === petId) ?? null;
   const clearError = (...keys: string[]) => setErrors((e) => {
@@ -54,12 +78,22 @@ export default function Publicar() {
     if (s >= 2 && images.length === 0 && !pet?.photo) e.images = "Adicione pelo menos uma foto.";
     if (s >= 3) {
       if (!f.description.trim()) e.description = "A descrição é obrigatória.";
-      if (!pet && !f.breed.trim()) e.breed = "Informe a raça ou se é SRD.";
-      if (type === "perdido" && !pet && !f.animalName.trim()) e.animalName = "Informe o nome do pet.";
-      if (!loc.city.trim()) e.city = "A cidade é obrigatória.";
-      if (!loc.uf) e.uf = "O estado (UF) é obrigatório.";
+      else if (f.description.trim().length < 10) e.description = "Descreva um pouco mais (pelo menos 10 caracteres).";
+      else if (f.description.length > 1000) e.description = "Use no máximo 1000 caracteres.";
+      if (!pet) {
+        if (!f.breed.trim()) e.breed = "Informe a raça ou se é SRD.";
+        else { const m = v.maxLen(f.breed, 60, "Raça"); if (m) e.breed = m; }
+      }
+      if (type === "perdido" && !pet) {
+        if (!f.animalName.trim()) e.animalName = "Informe o nome do pet.";
+        else { const m = v.maxLen(f.animalName, 60, "Nome"); if (m) e.animalName = m; }
+      }
+      const mc = v.maxLen(f.color, 60, "Cor e sinais"); if (mc) e.color = mc;
+      if (!loc.uf) e.uf = "Escolha o estado.";
+      if (!loc.city.trim()) e.city = "Escolha a cidade na lista.";
       if (!pos) e.pos = "Marque no mapa onde o pet foi visto pela última vez.";
       if (f.reward.length > 80) e.reward = "Use no máximo 80 caracteres.";
+      if (f.lastSeenAt && new Date(f.lastSeenAt).getTime() > Date.now() + 60_000) e.lastSeenAt = "A data não pode ser no futuro.";
     }
     return e;
   };
@@ -76,16 +110,22 @@ export default function Publicar() {
   const back = () => { let n = step - 1; if (n === 1 && type === "avistado") n = 0; if (n < 0) nav(-1); else setStep(n); };
 
   const addFiles = async (files: FileList | null) => {
-    if (!files) return;
+    if (!files || !files.length) return;
+    const room = 5 - images.length;
     setUploading(true);
+    const problems: string[] = [];
     try {
-      for (const file of Array.from(files).slice(0, 5 - images.length)) {
-        const img = await uploadImage(file);
-        setImages((s) => [...s, img]);
-        clearError("images");
+      const chosen = Array.from(files);
+      if (chosen.length > room) problems.push(`Cabem só mais ${room} ${room === 1 ? "foto" : "fotos"}; as demais foram ignoradas.`);
+      for (const file of chosen.slice(0, room)) {
+        try {
+          const img = await uploadImage(file);
+          setImages((s) => [...s, img]);
+        } catch (e) { problems.push(e instanceof ApiError ? e.message : `Falha ao enviar "${file.name}".`); }
       }
-    } catch (e) { toast(e instanceof ApiError ? e.message : "Falha ao enviar a foto.", "error"); }
-    finally { setUploading(false); }
+    } finally { setUploading(false); }
+    if (problems.length) setErrors((e) => ({ ...e, images: problems.join(" ") }));
+    else clearError("images");
   };
 
   const useMyLocation = async () => {
@@ -161,7 +201,7 @@ export default function Publicar() {
 
       {step === 2 && (
         <div>
-          <p className="label">Fotos * <span className="font-normal text-stone-500">(até 5; a primeira aparece no mapa e no cartaz)</span></p>
+          <p className="label">Fotos * <span className="font-normal text-stone-500">(até 5, JPG, PNG ou WEBP; a primeira aparece no mapa e no cartaz)</span></p>
           <div className="grid grid-cols-3 gap-2">
             {images.map((img) => (
               <div key={img.id} className="relative aspect-square">
@@ -172,7 +212,7 @@ export default function Publicar() {
             {images.length < 5 && (
               <label className="aspect-square rounded-xl border-2 border-dashed border-stone-300 flex flex-col items-center justify-center text-stone-500 cursor-pointer hover:bg-stone-100">
                 <ImagePlus className="w-7 h-7" /><span className="text-xs font-semibold mt-1">{uploading ? "Enviando..." : "Adicionar"}</span>
-                <input type="file" accept="image/*" multiple className="hidden" disabled={uploading} onChange={(e) => addFiles(e.target.files)} />
+                <input type="file" accept={IMAGE_ACCEPT} multiple className="hidden" disabled={uploading} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
               </label>
             )}
           </div>
@@ -186,31 +226,31 @@ export default function Publicar() {
           {!pet && (
             <>
               {type === "perdido" && (
-                <div><label className="label" htmlFor="n">Nome do pet *</label><input id="n" className="input" value={f.animalName} onChange={(e) => set("animalName", e.target.value)} />{errors.animalName && <p className="field-error">{errors.animalName}</p>}</div>
+                <div><label className="label" htmlFor="n">Nome do pet *</label><input id="n" className={`input ${errors.animalName ? "!border-red-500" : ""}`} maxLength={60} value={f.animalName} onChange={(e) => set("animalName", e.target.value)} />{errors.animalName && <p className="field-error">{errors.animalName}</p>}</div>
               )}
               <div className="grid grid-cols-2 gap-2">
-                <div><label className="label" htmlFor="s">Espécie *</label><select id="s" className="input" value={f.species} onChange={(e) => set("species", e.target.value)}>{Object.entries(SPECIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
-                <div><label className="label" htmlFor="b">Raça *</label><input id="b" className="input" placeholder="Ou SRD" value={f.breed} onChange={(e) => set("breed", e.target.value)} />{errors.breed && <p className="field-error">{errors.breed}</p>}</div>
+                <div><label className="label" htmlFor="s">Espécie *</label><Select id="s" value={f.species} options={SPECIES_OPTIONS} onChange={(val) => set("species", val)} /></div>
+                <div><label className="label" htmlFor="b">Raça *</label><input id="b" className={`input ${errors.breed ? "!border-red-500" : ""}`} maxLength={60} placeholder="Ou SRD" value={f.breed} onChange={(e) => set("breed", e.target.value)} />{errors.breed && <p className="field-error">{errors.breed}</p>}</div>
               </div>
             </>
           )}
           <div className="grid grid-cols-3 gap-2">
-            <div className="col-span-3 sm:col-span-1"><label className="label" htmlFor="c">Cor e sinais</label><input id="c" className="input" value={f.color} onChange={(e) => set("color", e.target.value)} /></div>
-            <div><label className="label" htmlFor="sz">Porte</label><select id="sz" className="input" value={f.size} onChange={(e) => set("size", e.target.value)}><option value="">--</option>{Object.entries(SIZES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
-            <div><label className="label" htmlFor="sx">Sexo</label><select id="sx" className="input" value={f.sex} onChange={(e) => set("sex", e.target.value)}><option value="">--</option>{Object.entries(SEXES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+            <div className="col-span-3 sm:col-span-1"><label className="label" htmlFor="c">Cor e sinais</label><input id="c" className={`input ${errors.color ? "!border-red-500" : ""}`} maxLength={60} value={f.color} onChange={(e) => set("color", e.target.value)} />{errors.color && <p className="field-error">{errors.color}</p>}</div>
+            <div><label className="label" htmlFor="sz">Porte</label><Select id="sz" value={f.size} options={SIZE_OPTIONS} placeholder="Não informar" onChange={(val) => set("size", val)} /></div>
+            <div><label className="label" htmlFor="sx">Sexo</label><Select id="sx" value={f.sex} options={SEX_OPTIONS} placeholder="Não informar" onChange={(val) => set("sex", val)} /></div>
           </div>
-          <div><label className="label" htmlFor="d">Descrição *</label><textarea id="d" rows={3} className="input" placeholder="Coleira, comportamento, onde costuma ir..." value={f.description} onChange={(e) => set("description", e.target.value)} />{errors.description && <p className="field-error">{errors.description}</p>}</div>
+          <div><label className="label" htmlFor="d">Descrição *</label><textarea id="d" rows={3} maxLength={1000} className={`input ${errors.description ? "!border-red-500" : ""}`} placeholder="Coleira, comportamento, onde costuma ir..." value={f.description} onChange={(e) => set("description", e.target.value)} /><p className="text-xs text-stone-400 text-right">{f.description.length}/1000</p>{errors.description && <p className="field-error">{errors.description}</p>}</div>
           {type === "perdido" && (
             <div><label className="label" htmlFor="r">Recompensa <span className="font-normal text-stone-500">(opcional)</span></label><input id="r" className="input" maxLength={80} placeholder="Ex.: R$ 200" value={f.reward} onChange={(e) => set("reward", e.target.value)} />{errors.reward && <p className="field-error">{errors.reward}</p>}</div>
           )}
-          <div><label className="label" htmlFor="w">Quando foi visto pela última vez?</label><input id="w" type="datetime-local" className="input" value={f.lastSeenAt} onChange={(e) => set("lastSeenAt", e.target.value)} /></div>
-          <CityFields city={loc.city} uf={loc.uf} onChange={(city, uf) => { setLoc({ city, uf }); clearError("city", "uf"); }} errors={{ city: errors.city, uf: errors.uf }} />
+          <div><label className="label" htmlFor="w">Quando foi visto pela última vez?</label><input id="w" type="datetime-local" max={nowLocal()} className={`input ${errors.lastSeenAt ? "!border-red-500" : ""}`} value={f.lastSeenAt} onChange={(e) => set("lastSeenAt", e.target.value)} />{errors.lastSeenAt && <p className="field-error">{errors.lastSeenAt}</p>}</div>
+          <CityFields idPrefix="pub" city={loc.city} uf={loc.uf} onChange={(city, uf) => { setLoc({ city, uf }); clearError("city", "uf"); }} errors={{ city: errors.city, uf: errors.uf }} />
           <div>
             <div className="flex items-center justify-between mb-1">
               <span className="label mb-0">Onde foi visto pela última vez? *</span>
               <button type="button" onClick={useMyLocation} className="text-sm font-bold text-brand-600 flex items-center gap-1 cursor-pointer"><Crosshair className="w-4 h-4" />Usar minha localização</button>
             </div>
-            <LocationPicker value={pos} onChange={(lat, lng) => { setPos([lat, lng]); clearError("pos"); }} />
+            <LocationPicker value={pos} center={center} onChange={(lat, lng) => { setPos([lat, lng]); clearError("pos"); }} />
             <p className="text-xs text-stone-500 mt-1">Toque no mapa para marcar. Só você vê o ponto exato; os outros veem um ponto aproximado.</p>
             {errors.pos && <p className="field-error">{errors.pos}</p>}
           </div>

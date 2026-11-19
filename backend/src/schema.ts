@@ -86,6 +86,14 @@ export const SCHEMA: string[] = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`,
   `CREATE INDEX IF NOT EXISTS messages_conv_idx ON messages (conversation_id, created_at)`,
+  `CREATE TABLE IF NOT EXISTS follows (
+    follower_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    followed_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (follower_id, followed_id),
+    CHECK (follower_id <> followed_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS follows_followed_idx ON follows (followed_id)`,
   `CREATE TABLE IF NOT EXISTS scans (
     id UUID PRIMARY KEY,
     pet_id UUID NOT NULL REFERENCES pets(id) ON DELETE CASCADE,

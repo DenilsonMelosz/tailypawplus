@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { CalendarClock, CheckCircle2, Download, Heart, MapPin, MessageCircle, Share2, Siren, Trash2 } from "lucide-react";
+import { CalendarClock, CheckCircle2, Download, Heart, MapPin, MessageCircle, Printer, Scissors, Share2, Siren, Trash2 } from "lucide-react";
 import { api, ApiError, media } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { SEXES, SIZES, SPECIES, alertTitle, ago, currentPosition, dateTime } from "../lib/format";
-import { printPoster } from "../lib/print";
+import { printPoster, printTag } from "../lib/print";
+import { svgToDataUrl, tagSvg } from "../lib/tagArt";
+import * as v from "../lib/validate";
 import type { Alert, Pet } from "../lib/types";
 import { TypeChip } from "../components/AlertCard";
 import { COLORS, MapView } from "../components/MapView";
@@ -79,7 +81,7 @@ export function CasoPage() {
       <div>
         <Gallery images={a.images} alt={title} />
         <div className="mt-4">
-          <MapView height={230} points={[{ id: a.id, lat: a.lat, lng: a.lng, approximate: a.approximate, color: COLORS[a.type], label: a.approximate ? "Região aproximada" : "Ponto exato (só você vê)" }]} />
+          <MapView height={230} title={`Local de ${title}`} points={[{ id: a.id, lat: a.lat, lng: a.lng, approximate: a.approximate, color: COLORS[a.type], label: a.approximate ? "Região aproximada" : "Ponto exato (só você vê)" }]} />
           <p className="text-xs text-stone-500 mt-1">{a.approximate ? "Área aproximada de onde o pet foi visto (até ~200 m)." : "Você vê o ponto exato; os outros veem uma área aproximada."}</p>
         </div>
       </div>
@@ -153,7 +155,7 @@ function OwnerActions({ a, busy, run, onPoster, onDeleted }: {
           <p className="font-bold">Leituras da plaquinha ({scans.length})</p>
           {scans.length === 0 ? <p className="text-sm text-stone-500">Ninguém leu a plaquinha ainda.</p> : (
             <>
-              <div className="mt-2"><MapView height={180} points={scans.map((s) => ({ id: s.id, lat: s.lat, lng: s.lng, color: COLORS.scan, label: dateTime(s.createdAt) }))} /></div>
+              <div className="mt-2"><MapView height={180} title="Leituras da plaquinha" points={scans.map((s) => ({ id: s.id, lat: s.lat, lng: s.lng, color: COLORS.scan, label: dateTime(s.createdAt) }))} /></div>
               <ul className="text-sm mt-2 space-y-1">{scans.map((s) => <li key={s.id}>📍 {dateTime(s.createdAt)}{s.message ? ` · "${s.message}"` : ""}</li>)}</ul>
             </>
           )}
@@ -171,20 +173,25 @@ function OwnerActions({ a, busy, run, onPoster, onDeleted }: {
 function PosterModal({ open, onClose, a }: { open: boolean; onClose: () => void; a: Alert }) {
   const [phone, setPhone] = useState("");
   const [extra, setExtra] = useState("");
+  const [errs, setErrs] = useState<Record<string, string>>({});
   const url = a.tagCode ? siteUrl(`/p/${a.tagCode}`) : siteUrl(`/caso/${a.id}`);
   return (
     <Modal open={open} onClose={onClose} title="Baixar cartaz">
       <p className="text-sm text-stone-600 mb-3">O cartaz traz a foto, os dados e um QR Code que leva {a.tagCode ? "à página do pet" : "a este caso"}. Use "Salvar como PDF" na janela de impressão para baixar.</p>
       <label className="label" htmlFor="ex">Informação extra (opcional)</label>
-      <input id="ex" className="input mb-3" value={extra} maxLength={120} onChange={(e) => setExtra(e.target.value)} placeholder="Ex.: muito assustado, não corra atrás" />
+      <input id="ex" className="input" value={extra} maxLength={120} onChange={(e) => { setExtra(e.target.value); setErrs((x) => ({ ...x, extra: "" })); }} placeholder="Ex.: muito assustado, não corra atrás" />
+      <p className="text-xs text-stone-400 text-right mb-2">{extra.length}/120</p>
       {a.isMine && (
         <>
           <label className="label" htmlFor="ph">Mostrar telefone no cartaz? (opcional)</label>
-          <input id="ph" className="input" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Deixe vazio para usar só o QR Code" inputMode="tel" />
+          <input id="ph" className={`input ${errs.phone ? "!border-red-500" : ""}`} value={phone} maxLength={20} onChange={(e) => { setPhone(e.target.value); setErrs((x) => ({ ...x, phone: "" })); }} placeholder="Ex.: (71) 99999-0000. Vazio = só o QR Code" inputMode="tel" autoComplete="tel" />
+          {errs.phone && <p className="field-error">{errs.phone}</p>}
           <p className="text-xs text-stone-500 mt-1 mb-3">O telefone não fica salvo nem aparece no aplicativo.</p>
         </>
       )}
       <button type="button" className="btn-primary w-full" onClick={() => {
+        const bad = v.phone(phone);
+        if (bad) { setErrs({ phone: bad }); return; }
         printPoster({
           title: alertTitle(a), photo: media(a.images[0]), type: a.type,
           details: [SPECIES[a.species], a.breed, a.size ? SIZES[a.size] : null, a.color].filter(Boolean).join(" · "),
@@ -206,9 +213,13 @@ export function TagPage() {
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [scans, setScans] = useState<{ id: string; lat: number; lng: number; message: string | null; createdAt: string }[]>([]);
+  const [tagImg, setTagImg] = useState("");
 
   useEffect(() => { api(`/tags/${code}`).then(setPet).catch((e) => setErr(e instanceof ApiError ? e.message : "Erro ao carregar.")); }, [code]);
   useEffect(() => { if (pet?.isOwner) api(`/pets/${pet.petId}/scans`).then(setScans).catch(() => {}); }, [pet?.isOwner, pet?.petId]);
+  useEffect(() => {
+    if (pet?.isOwner) tagSvg(pet.name, siteUrl(`/p/${code}`)).then((s) => setTagImg(svgToDataUrl(s))).catch(() => setTagImg(""));
+  }, [pet?.isOwner, pet?.name, code]);
 
   if (err) return <p className="text-center py-16 text-stone-600">{err}</p>;
   if (!pet) return <div className="card h-96 animate-pulse bg-stone-100 max-w-md mx-auto" />;
@@ -236,12 +247,31 @@ export function TagPage() {
       <p className="text-stone-600">{[SPECIES[pet.species], pet.breed, pet.size ? SIZES[pet.size] : null, pet.color].filter(Boolean).join(" · ")}</p>
 
       {pet.isOwner ? (
-        <div className="card p-4 mt-4">
-          <p className="font-bold">Esta é a página da plaquinha de {pet.name}</p>
-          <p className="text-sm text-stone-600">Quem ler o QR vê esta página e pode enviar a localização para você.</p>
-          <p className="font-bold mt-3">Leituras ({scans.length})</p>
-          {scans.length > 0 && <div className="mt-2"><MapView height={200} points={scans.map((s) => ({ id: s.id, lat: s.lat, lng: s.lng, color: COLORS.scan, label: dateTime(s.createdAt) }))} /></div>}
-          <ul className="text-sm mt-2 space-y-1">{scans.map((s) => <li key={s.id}>📍 {dateTime(s.createdAt)}{s.message ? ` · "${s.message}"` : ""}</li>)}</ul>
+        <div className="space-y-3 mt-4">
+          <div className="card p-4">
+            <p className="font-bold">Esta é a página do {pet.name}</p>
+            <p className="text-sm text-stone-600">É exatamente o que aparece para quem ler o QR da plaquinha. Você vê aqui as ferramentas que só o tutor tem.</p>
+            <div className="flex items-center gap-4 mt-3">
+              {tagImg ? <img src={tagImg} alt={`Plaquinha de ${pet.name}`} className="w-28 h-28 shrink-0" /> : <div className="w-28 h-28 rounded-full bg-stone-100 animate-pulse shrink-0" />}
+              <div className="text-sm text-stone-600 min-w-0">
+                <p>O QR desta plaquinha leva para este endereço:</p>
+                <p className="text-xs text-brand-700 font-semibold break-all mt-1">{siteUrl(`/p/${code}`)}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <button type="button" className="btn-primary" onClick={() => printTag(pet.name, siteUrl(`/p/${code}`))}><Printer className="w-4 h-4" />Imprimir</button>
+              {pet.lostAlertId
+                ? <Link to={`/caso/${pet.lostAlertId}`} className="btn-ghost">Ver meu alerta</Link>
+                : <Link to={`/publicar?pet=${pet.petId}`} className="btn-danger"><Siren className="w-4 h-4" />Ele se perdeu</Link>}
+            </div>
+            <p className="text-xs text-stone-500 mt-3 flex gap-2"><Scissors className="w-4 h-4 shrink-0" />Recorte no tamanho que caber na coleira e use um porta-plaquinha transparente para pendurar.</p>
+          </div>
+          <div className="card p-4">
+            <p className="font-bold">Leituras da plaquinha ({scans.length})</p>
+            {scans.length === 0 && <p className="text-sm text-stone-500">Ninguém leu a plaquinha ainda. Quando alguém tocar em "Encontrei este pet", o local aparece aqui e você é avisado.</p>}
+            {scans.length > 0 && <div className="mt-2"><MapView height={200} title={`Leituras da plaquinha de ${pet.name}`} points={scans.map((s) => ({ id: s.id, lat: s.lat, lng: s.lng, color: COLORS.scan, label: dateTime(s.createdAt) }))} /></div>}
+            <ul className="text-sm mt-2 space-y-1">{scans.map((s) => <li key={s.id}>📍 {dateTime(s.createdAt)}{s.message ? ` · "${s.message}"` : ""}</li>)}</ul>
+          </div>
         </div>
       ) : sent ? (
         <div className="card p-5 mt-4 text-center">

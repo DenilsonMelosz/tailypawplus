@@ -8,6 +8,8 @@ Projeto independente, separado da plataforma oficial do TailyPaw.
 
 As quatro telas: **T1 Resgate** (`/`), **T2 Publicar alerta** (`/publicar`), **T3 Caso do pet** (`/caso/:id` e a página da plaquinha `/p/:codigo`) e **T4 Conversa** (`/conversas`).
 Login e "Meus pets e alertas" são janelas sobre as telas, e não telas novas.
+Sem conta, `/` mostra só a apresentação; o mapa e a lista da cidade exigem login. `/caso/:id` e `/p/:codigo` abrem sem login, por causa do QR do cartaz e da plaquinha.
+Em Conversas há a aba **Pessoas** (buscar pelo nome, seguir e conversar). A cidade é escolhida em lista do IBGE, e as fotos aceitam só JPG, PNG e WEBP.
 
 ## Rodar no computador
 

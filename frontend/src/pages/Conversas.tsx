@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Send } from "lucide-react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowLeft, Search, Send } from "lucide-react";
 import { api, ApiError, media } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { SPECIES, ago } from "../lib/format";
 import type { Conversation, Message } from "../lib/types";
 import { useToast } from "../components/Toast";
+import { PeopleTab } from "../components/PeopleTab";
 
 /** T4 Conversa: contato entre tutor e quem viu o pet, sem expor dados (RF08). */
 export default function Conversas() {
   const { id } = useParams();
   const { user, ready, requireLogin } = useAuth();
   const nav = useNavigate();
+  const [search, setSearch] = useSearchParams();
+  const tab = search.get("aba") === "pessoas" ? "pessoas" : "conversas";
   const [list, setList] = useState<Conversation[] | null>(null);
 
   useEffect(() => {
@@ -29,19 +32,34 @@ export default function Conversas() {
   return (
     <div className="grid md:grid-cols-[320px_1fr] gap-4 h-[calc(100vh-7rem)]">
       <aside className={`card overflow-y-auto ${id ? "hidden md:block" : ""}`}>
-        <p className="px-4 py-3 font-extrabold border-b border-stone-100">Conversas</p>
-        {list?.length === 0 && <p className="p-4 text-sm text-stone-500">Nenhuma conversa ainda. Abra um alerta e toque em "Enviar mensagem".</p>}
-        {list?.map((c) => (
-          <Link key={c.id} to={`/conversas/${c.id}`} className={`flex gap-3 px-4 py-3 border-b border-stone-100 hover:bg-stone-50 ${c.id === id ? "bg-brand-50" : ""}`}>
-            {c.alert?.image ? <img src={media(c.alert.image)} alt="" className="w-11 h-11 rounded-full object-cover" /> : <div className="w-11 h-11 rounded-full bg-stone-200" />}
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold truncate">{c.other.name}</p>
-              <p className="text-xs text-stone-500 truncate">{c.alert ? `sobre: ${c.alert.animalName ?? SPECIES[c.alert.species]}` : ""}</p>
-              <p className="text-sm text-stone-600 truncate">{c.lastMessage ?? "Sem mensagens"}</p>
-            </div>
-            <span className="text-[11px] text-stone-400">{ago(c.lastMessageAt)}</span>
-          </Link>
-        ))}
+        <div className="flex border-b border-stone-100 sticky top-0 bg-white z-10" role="tablist">
+          {([["conversas", "Conversas"], ["pessoas", "Pessoas"]] as const).map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setSearch(k === "pessoas" ? { aba: "pessoas" } : {})}
+              className={`flex-1 h-12 font-extrabold text-sm cursor-pointer border-b-2 ${tab === k ? "border-brand-600 text-brand-700" : "border-transparent text-stone-500"}`}>{label}</button>
+          ))}
+        </div>
+        {tab === "pessoas" ? <PeopleTab /> : (
+          <>
+            {list?.length === 0 && (
+              <div className="p-4 text-sm text-stone-500">
+                <p>Nenhuma conversa ainda.</p>
+                <button type="button" className="btn-primary mt-3 h-10 w-full" onClick={() => setSearch({ aba: "pessoas" })}><Search className="w-4 h-4" />Buscar pessoas</button>
+                <p className="mt-3">Ou abra um alerta e toque em "Enviar mensagem".</p>
+              </div>
+            )}
+            {list?.map((c) => (
+              <Link key={c.id} to={`/conversas/${c.id}`} className={`flex gap-3 px-4 py-3 border-b border-stone-100 hover:bg-stone-50 ${c.id === id ? "bg-brand-50" : ""}`}>
+                {c.alert?.image ? <img src={media(c.alert.image)} alt="" className="w-11 h-11 rounded-full object-cover" /> : <div className="w-11 h-11 rounded-full bg-brand-50 text-brand-700 font-bold flex items-center justify-center">{c.other.name.trim()[0]?.toUpperCase()}</div>}
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold truncate">{c.other.name}</p>
+                  <p className="text-xs text-stone-500 truncate">{c.alert ? `sobre: ${c.alert.animalName ?? SPECIES[c.alert.species]}` : "Conversa direta"}</p>
+                  <p className="text-sm text-stone-600 truncate">{c.lastMessage ?? "Sem mensagens"}</p>
+                </div>
+                <span className="text-[11px] text-stone-400">{ago(c.lastMessageAt)}</span>
+              </Link>
+            ))}
+          </>
+        )}
       </aside>
       <section className={`card flex flex-col overflow-hidden ${id ? "" : "hidden md:flex"}`}>
         {id ? <Thread id={id} conv={current} /> : <p className="m-auto text-stone-500">Escolha uma conversa.</p>}

@@ -36,11 +36,18 @@ async function member(convId: string, userId: string) {
 export const conversations = Router();
 
 conversations.post("/", requireAuth, wrap(async (req, res) => {
-  const b = z.object({ alertId: z.string().uuid() }).parse(req.body);
-  const a = await one(`SELECT author_id FROM alerts WHERE id=$1`, [b.alertId]);
-  if (!a) throw new HttpError(404, "Alerta não encontrado.");
-  if (a.author_id === req.userId) throw new HttpError(400, "Este alerta é seu.");
-  res.json({ id: await getOrCreateConversation(b.alertId, req.userId!, a.author_id) });
+  const b = z.object({ alertId: z.string().uuid().optional(), userId: z.string().uuid().optional() })
+    .refine((v) => !!v.alertId !== !!v.userId, "Informe o alerta ou a pessoa.").parse(req.body);
+  if (b.alertId) {
+    const a = await one(`SELECT author_id FROM alerts WHERE id=$1`, [b.alertId]);
+    if (!a) throw new HttpError(404, "Alerta não encontrado.");
+    if (a.author_id === req.userId) throw new HttpError(400, "Este alerta é seu.");
+    return res.json({ id: await getOrCreateConversation(b.alertId, req.userId!, a.author_id) });
+  }
+  // conversa direta (sem alerta), usada ao buscar uma pessoa
+  if (b.userId === req.userId) throw new HttpError(400, "Você não pode conversar consigo mesmo.");
+  if (!(await one(`SELECT 1 FROM users WHERE id=$1`, [b.userId]))) throw new HttpError(404, "Pessoa não encontrada.");
+  res.json({ id: await getOrCreateConversation(null, req.userId!, b.userId!) });
 }));
 
 conversations.get("/", requireAuth, wrap(async (req, res) => {

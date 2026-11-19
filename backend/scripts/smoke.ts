@@ -56,7 +56,9 @@ const notifV = (await call("GET", "/notifications", undefined, vizinho.token)).j
 const notifL = (await call("GET", "/notifications", undefined, longe.token)).json;
 ok(notifV.unread === 1 && notifL.unread === 0, "notificacao chega a vizinha e nao a outra cidade");
 
-const list = (await call("GET", "/alerts?city=SALVADOR&uf=ba&type=perdido")).json;
+r = await call("GET", "/alerts?city=SALVADOR&uf=ba&type=perdido");
+ok(r.status === 401, "RNF05 o mapa e a lista exigem conta");
+const list = (await call("GET", "/alerts?city=SALVADOR&uf=ba&type=perdido", undefined, vizinho.token)).json;
 ok(list.length === 1, "RF04 lista por cidade (sem diferenciar maiusculas)");
 
 const conv = (await call("POST", "/conversations", { alertId }, vizinho.token)).json;
@@ -101,8 +103,36 @@ ok(a.status === "arquivado", "RN06 arquiva sem resposta");
 r = await call("POST", `/alerts/${alertId}/reactivate`, {}, tutor.token);
 ok(r.status === 200, "RN06 autor reativa");
 r = await call("POST", `/alerts/${alertId}/resolve`, {}, tutor.token);
-const after = (await call("GET", "/alerts?city=Salvador&uf=BA&type=perdido")).json;
+const after = (await call("GET", "/alerts?city=Salvador&uf=BA&type=perdido", undefined, vizinho.token)).json;
 ok(r.status === 200 && after.length === 0, "RF10 resolvido sai do mapa");
+
+// buscar e seguir pessoas
+r = await call("GET", "/users/search?q=Viz");
+ok(r.status === 401, "busca de pessoas exige conta");
+r = await call("GET", "/users/search?q=V", undefined, tutor.token);
+ok(r.status === 400, "busca exige pelo menos 2 letras");
+r = await call("GET", "/users/search?q=viz", undefined, tutor.token);
+ok(r.json.length === 1 && r.json[0].name === "Vizinha" && !("email" in r.json[0]), "busca acha pessoa pelo nome, sem expor e-mail");
+const vizId = r.json[0].id;
+r = await call("GET", "/users/search?q=tut", undefined, tutor.token);
+ok(r.json.length === 0, "busca nao devolve a propria pessoa");
+r = await call("POST", `/users/${vizId}/follow`, {}, tutor.token);
+ok(r.status === 200 && r.json.following === true, "seguir uma pessoa");
+await call("POST", `/users/${vizId}/follow`, {}, tutor.token);
+const conn = (await call("GET", "/users/connections", undefined, vizinho.token)).json;
+ok(conn.followers.length === 1 && conn.followers[0].name === "Tutor" && conn.following.length === 0, "seguidor aparece para quem foi seguido (sem duplicar)");
+const nf = (await call("GET", "/notifications", undefined, vizinho.token)).json;
+ok(nf.items.filter((n: any) => n.kind === "follow").length === 1, "novo seguidor gera um aviso so");
+r = await call("POST", `/users/${tutor.user.id}/follow`, {}, tutor.token);
+ok(r.status === 400, "nao da para seguir a si mesmo");
+r = await call("POST", "/conversations", { userId: vizId }, tutor.token);
+const direct = r.json.id;
+r = await call("POST", "/conversations", { userId: vizId }, tutor.token);
+ok(direct && r.json.id === direct, "conversa direta e reaproveitada");
+r = await call("POST", "/conversations", { userId: tutor.user.id }, tutor.token);
+ok(r.status === 400, "nao abre conversa consigo mesmo");
+r = await call("DELETE", `/users/${vizId}/follow`, undefined, tutor.token);
+ok(r.json.following === false && (await call("GET", "/users/connections", undefined, tutor.token)).json.following.length === 0, "deixar de seguir");
 
 server.close();
 console.log(fails ? `\n${fails} falha(s)` : "\nTodas as regras passaram.");

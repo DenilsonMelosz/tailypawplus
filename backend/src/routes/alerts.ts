@@ -7,8 +7,8 @@ import { getOrCreateConversation } from "./social.js";
 
 const r = Router();
 
-/* T1 Resgate: alertas abertos da cidade (RF04). */
-r.get("/", optionalAuth, wrap(async (req, res) => {
+/* T1 Resgate: alertas abertos da cidade (RF04). O mapa e a lista so abrem depois do login (RNF05). */
+r.get("/", requireAuth, wrap(async (req, res) => {
   const f = z.object({
     city: z.string().optional(), uf: z.string().optional(),
     type: z.enum(["perdido", "avistado", "todos"]).default("todos"),

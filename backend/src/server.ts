@@ -7,6 +7,7 @@ import auth, { me } from "./routes/auth.js";
 import alerts from "./routes/alerts.js";
 import { images, pets, tags } from "./routes/pets.js";
 import { conversations, notifications } from "./routes/social.js";
+import users from "./routes/users.js";
 
 export async function createApp() {
   await initDb();
@@ -28,6 +29,7 @@ export async function createApp() {
   app.use("/api/tags", tags);
   app.use("/api/notifications", notifications);
   app.use("/api/conversations", conversations);
+  app.use("/api/users", users);
   app.use("/api", (_req, res) => res.status(404).json({ message: "Rota não encontrada." }));
   app.use(errorHandler);
   return app;

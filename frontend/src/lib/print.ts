@@ -1,4 +1,5 @@
 import QRCode from "qrcode";
+import { tagSvg } from "./tagArt";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
 
@@ -13,14 +14,19 @@ function openPrint(title: string, body: string) {
 }
 
 export async function printTag(name: string, url: string) {
-  const qr = await QRCode.toDataURL(url, { width: 500, margin: 1 });
-  const tag = (s: number) => `<div class="c" style="width:${s}mm;height:${s}mm;border:${s / 18}mm solid #159EAD;border-radius:50%;justify-content:center;box-sizing:border-box">
-    <img src="${qr}" style="width:${s * 0.55}mm"><b style="font-size:${s / 9}mm;margin-top:1mm">${esc(name)}</b>
-    <span style="font-size:${s / 16}mm">Me achou? Leia o QR</span></div>`;
-  openPrint(`Plaquinha de ${name}`, `<div class="c"><h2>Plaquinha de ${esc(name)}</h2>
-  <p>Recorte no tamanho que caber na coleira. Para pendurar, use um porta-plaquinha transparente.</p>
-  <div style="display:flex;gap:10mm;align-items:center;margin-top:6mm">${tag(60)}${tag(40)}${tag(30)}</div>
-  <p style="font-size:10pt;color:#555;margin-top:8mm">${esc(url)}</p></div>`);
+  const sizes = [60, 45, 38];
+  const arts = await Promise.all(sizes.map(() => tagSvg(name, url, { guide: true })));
+  const item = (s: number, art: string) => `<div class="c"><div style="width:${(s * 110 / 103).toFixed(2)}mm;height:${(s * 110 / 103).toFixed(2)}mm">${art}</div><b style="font-size:10pt;margin-top:2mm">Ø ${s} mm</b></div>`;
+  openPrint(`Plaquinha de ${name}`, `<div class="c"><h2 style="margin:0 0 2mm">Plaquinha de ${esc(name)}</h2>
+  <p style="margin:0 0 6mm;max-width:150mm">Recorte no tamanho que caber na coleira, seguindo a linha tracejada. Para pendurar, use um porta-plaquinha transparente.</p>
+  <div style="display:flex;gap:8mm;align-items:flex-end;justify-content:center">${sizes.map((s, i) => item(s, arts[i])).join("")}</div>
+  <div style="margin-top:10mm;max-width:150mm;text-align:left;font-size:11pt;line-height:1.5">
+    <b>Como usar</b>
+    <ol style="margin:2mm 0 0;padding-left:6mm"><li>Imprima em papel firme (couchê ou fotográfico) e sem reduzir o tamanho da página.</li>
+    <li>Recorte na linha tracejada e coloque dentro do porta-plaquinha transparente, que protege da água e do desgaste.</li>
+    <li>Prenda o porta-plaquinha na coleira e teste lendo o QR Code com a câmera do celular.</li></ol>
+  </div>
+  <p style="font-size:10pt;color:#555;margin-top:6mm">Este QR abre: ${esc(url)}</p></div>`);
 }
 
 export async function printPoster(p: {

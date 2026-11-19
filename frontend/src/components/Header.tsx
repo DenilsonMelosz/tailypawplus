@@ -6,13 +6,14 @@ import { api } from "../lib/api";
 import { ago } from "../lib/format";
 import type { Notification } from "../lib/types";
 import { MyAccountDrawer } from "./MyAccountDrawer";
+import { useUi } from "../lib/ui";
 
 export function Header() {
   const { user, requireLogin } = useAuth();
   const nav = useNavigate();
   const [notif, setNotif] = useState<{ unread: number; items: Notification[] }>({ unread: 0, items: [] });
   const [openBell, setOpenBell] = useState(false);
-  const [openMe, setOpenMe] = useState(false);
+  const { accountOpen, setAccountOpen } = useUi();
   const bellRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -71,13 +72,13 @@ export function Header() {
                 </div>
               )}
             </div>
-            <button type="button" onClick={() => setOpenMe(true)} className="w-10 h-10 rounded-full bg-brand-50 text-brand-700 font-bold flex items-center justify-center cursor-pointer" aria-label="Minha conta">
+            <button type="button" onClick={() => setAccountOpen(true)} className="w-10 h-10 rounded-full bg-brand-50 text-brand-700 font-bold flex items-center justify-center cursor-pointer" aria-label="Minha conta">
               {user.name.trim()[0]?.toUpperCase() ?? <UserRound className="w-5 h-5" />}
             </button>
-            <MyAccountDrawer open={openMe} onClose={() => setOpenMe(false)} />
+            <MyAccountDrawer open={accountOpen} onClose={() => setAccountOpen(false)} />
           </>
         ) : (
-          <button type="button" className="btn-primary h-10" onClick={() => requireLogin()}>Entrar</button>
+          <button type="button" className="btn-primary h-10" onClick={() => requireLogin(undefined, "login")}>Entrar</button>
         )}
       </div>
     </header>

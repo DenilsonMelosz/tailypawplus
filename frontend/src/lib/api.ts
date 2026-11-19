@@ -1,3 +1,5 @@
+import { checkImage } from "./files";
+
 export const API_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? "http://localhost:3333";
 
 export class ApiError extends Error {
@@ -36,6 +38,8 @@ export const media = (url?: string | null) => (url ? (url.startsWith("http") ? u
 
 /** Reduz a foto no navegador antes de enviar (max. 1280 px, JPEG). */
 export async function uploadImage(file: File): Promise<{ id: string; url: string }> {
+  const problem = await checkImage(file);
+  if (problem) throw new ApiError(400, problem);
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
